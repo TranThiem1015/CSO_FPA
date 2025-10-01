@@ -1,0 +1,47 @@
+@startuml
+' Detailed activity-style flowchart for CSO_FPA.py
+|Main|
+start
+:Read configuration / set constants (K, list of P_max, num_runs, max_iter);
+:Read channel matrix H (read_h_matrix);
+:Compute and print uniform baseline (sum_rate);
+
+while (more P_max values?) is (yes)
+  :Select next P_max value;
+  partition "Experiment: evaluate_algorithms" {
+    :Prepare algorithms dict with wrappers for CSO and FPA;
+    
+
+    partition "Per-algorithm loop" {
+      :Initialize accumulators (runs, fitness lists, histories, population snapshots);
+      repeat
+        partition "Call optimizer" {
+          if (algorithm == CSO) then (yes)
+            :Call cso_power_optimization(K,H,P_max,max_iter,...);
+            
+          else (no)
+            :Call fpa_power_optimization(K,H,P_max,max_iter,...);
+            
+          endif
+        }
+        :Append returned histories to accumulators;
+        :Update running totals and timing;
+      repeat while (run < num_runs)
+      :Compute per-algorithm aggregates (best_overall, avg, std, avg_time);
+    }
+
+    :Assemble results dict with per-algorithm entries and histories;
+  }
+
+  partition "Post-processing" {
+    :Compute convergence metrics (compute_convergence_metrics);
+    :Plot mean convergence (plot_mean_convergence) and save PNG;
+    :Save convergence metrics CSV;
+    :Write population summary table (print_population_summary_table) and save CSV/TXT;
+    :Print per-algorithm summary stats to console;
+  }
+endwhile
+
+:Finish and exit;
+stop
+@enduml

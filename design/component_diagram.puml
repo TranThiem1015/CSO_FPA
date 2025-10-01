@@ -1,0 +1,37 @@
+@startuml
+' Component diagram for CSO_FPA.py
+
+package "CSO_FPA Main" {
+  [Main Script] as Main
+}
+
+package "Algorithms" {
+  [CSO] as CSO
+  [FPA] as FPA
+}
+
+package "Utilities" {
+  [read_h_matrix]
+  [sum_rate]
+  [levy_flight]
+}
+
+package "Reporting" {
+  [evaluate_algorithms]
+  [print_population_summary_table]
+  [plot_mean_convergence]
+  [compute_convergence_metrics]
+}
+
+Main --> read_h_matrix : reads
+Main --> sum_rate : baseline
+Main --> evaluate_algorithms : runs
+evaluate_algorithms --> CSO : calls cso_power_optimization
+evaluate_algorithms --> FPA : calls fpa_power_optimization
+CSO --> sum_rate : evaluates
+FPA --> sum_rate : evaluates
+evaluate_algorithms --> print_population_summary_table : writes
+evaluate_algorithms --> plot_mean_convergence : plots
+evaluate_algorithms --> compute_convergence_metrics : computes metrics
+
+@enduml

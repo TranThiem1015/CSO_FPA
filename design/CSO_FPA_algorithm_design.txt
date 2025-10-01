@@ -1,0 +1,193 @@
+Thiết kế giải thuật CSO và FPA cho bài toán phân bổ công suất trên mô hình kênh giao thoa
+
+Mục tiêu tài liệu
+- Mô tả bài toán tối ưu hóa phân bổ công suất cho mạng giao thoa K-nguười dùng.
+- Trình bày thiết kế hai thuật toán tối ưu hóa: Cat Swarm Optimization (CSO) và Flower Pollination Algorithm (FPA) áp dụng cho bài toán này.
+- Đưa pseudocode, các tham số cần tinh chỉnh, chỉ dẫn thực nghiệm và các lưu ý triển khai.
+
+1. Bài toán và mô hình
+
+Mô tả ngắn:
+- Có K người dùng, mỗi người dùng k phát với công suất P_k (0 <= P_k <= P_max).
+- Ma trận kênh H là ma trận KxK phức, H[k,j] là hệ số kênh từ transmitter j đến receiver k.
+- Mục tiêu: tối đa hóa tổng tốc độ (sum-rate):
+	R(P) = \sum_{k=1}^K log2(1 + SINR_k)
+	với SINR_k = (P_k |H[k,k]|^2) / (sigma2 + \sum_{j != k} P_j |H[k,j]|^2)
+
+Ràng buộc:
+- 0 <= P_k <= P_max cho mọi k.
+
+Hàm mục tiêu trả về một số thực (sum-rate). Trong thực thi: bảo vệ chống NaN/inf và lỗi số học (trả -inf cho cấu hình không hợp lệ).
+
+2. Giao diện hàm / Dạng dữ liệu
+- Input chung:
+	- K: số chiều (int)
+	- H: numpy.ndarray complex shape (K,K)
+	- P_max: float
+	- Các tham số thuật toán (pop size, max_iter, v.v.)
+- Output tiêu biểu:
+	- best solution (vector P length K), best fitness (float)
+	- global_fitness_history: list/array theo iter
+	- population_history: list of arrays (per-iteration population positions)
+	- all_fitness_history: list of arrays (per-iteration personal-best fitness per individual)
+	- elapsed time (float)
+
+3. Thiết kế CSO (Cat Swarm Optimization) cho bài toán
+
+3.1 Ý tưởng chính
+- Mỗi cá thể (cat) là một vector P kích thước K (công suất cho từng user).
+- CSO xen kẽ hai chế độ:
+	- Tracing (theo vết): cập nhật vận tốc và di chuyển gần về global best (giống PSO nhẹ).
+	- Seeking (tìm kiếm cục bộ): tạo nhiều bản sao địa phương quanh vị trí hiện tại, chọn bản sao tốt nhất theo xác suất mềmmax.
+- Giữ tracked: personal best cho mỗi cat, global best cho cả quần thể.
+
+3.2 Tham số chính
+- num_cats: kích thước quần thể.
+- max_iter: số vòng lặp tối đa.
+- MR: tỉ lệ cats vào chế độ tracing (ví dụ 0.2).
+- SMP: số bản sao trong seeking (ví dụ 4).
+- SRD: phạm vi tìm kiếm trong seeking (tỷ lệ so với P_max).
+- c, w: hệ số tăng tốc/độ trơn cho cập nhật vận tốc.
+- sigma2: công suất nhiễu nền.
+
+3.3 Pseudocode (CSO)
+
+Initialize cats positions uniformly in [0,P_max] (shape: num_cats x K)
+Initialize velocities zeros (num_cats x K)
+Compute personal bests and fitnesses; set global best
+population_history.append(copy of initial cats)
+all_fitness_history.append(copy of personal best fitnesses)
+
+for iter in 0..max_iter-1:
+	select num_tracing = max(1, int(MR * num_cats)) cats -> tracing set
+	for each cat i:
+		if i in tracing set:
+			velocities[i] = w * velocities[i] + c * r * (global_best - cats[i])
+			cats[i] += clip(velocities[i], -vmax, vmax)
+		else:
+			# seeking
+			create SMP copies of cats[i]
+			perturb with uniform noise in [-SRD*P_max, SRD*P_max]
+			evaluate fitness of copies
+			choose one copy by softmax on fitness
+			cats[i] = chosen_copy
+
+		clip cats[i] into [0, P_max]
+		current_fitness = sum_rate(cats[i])
+		if current_fitness > personal_best[i]: update personal best
+		optional restart: every T iters if current_fitness << global_best -> resample
+
+	update global best from personal_best array
+	append population_history and all_fitness_history
+
+return detailed tuple: (individual_x_best, individual_best_fitness, individual_best_history,
+												 individual_fitness_history, global_best, global_best_fitness,
+												 global_fitness_history, execution_time,
+												 population_history, all_fitness_history)
+
+3.4 Lưu ý triển khai và các quyết định an toàn
+- Giới hạn vận tốc: giới hạn tuyệt đối trên velocity để tránh bước nhảy quá lớn.
+- Floor cho interference (ví dụ >= 1e-1) để tránh chia cho số rất nhỏ.
+- Khi tính softmax nên bảo vệ chống overflow bằng cách trừ max trước khi exp.
+- Khi cập nhật personal best, lưu lịch sử vị trí cá nhân (stack các snapshot) để xuất bảng population summary sau này.
+
+4. Thiết kế FPA (Flower Pollination Algorithm) cho bài toán
+
+4.1 Ý tưởng chính
+- Mỗi flower là một vector P.
+- Hai kiểu pollination:
+	- Global pollination: Lévy flight dẫn hướng về global best (khám phá lớn).
+	- Local pollination: perturbation nhỏ dựa trên hai flower ngẫu nhiên (khai thác địa phương).
+- Xác suất p quy định tần suất global pollination.
+
+4.2 Tham số chính
+- num_flowers: kích thước quần thể.
+- max_iter: số vòng lặp tối đa.
+- p: xác suất thực hiện global pollination (ví dụ 0.8).
+- lambda_: tham số đuôi của phân phối Lévy (ví dụ 1.5).
+- levy_scale: tỷ lệ bước Lévy (scale).
+- elitism: số cá thể tốt nhất giữ nguyên không bị thay thế (tuỳ chọn).
+
+4.3 Pseudocode (FPA)
+
+Initialize flowers uniformly in [0,P_max]
+Compute personal bests and fitnesses; set global best
+population_history.append(initial)
+all_fitness_history.append(personal_best_fitness)
+
+for t in 1..max_iter:
+	for i in 0..num_flowers-1:
+		if rand() < p:
+			L = levy_flight(lambda_, size=K, scale=levy_scale)
+			flowers[i] += L * (global_best - flowers[i])
+		else:
+			eps = uniform(0,1,size=K)
+			j,k = random two distinct flower indices
+			flowers[i] += eps * (flowers[j] - flowers[k])
+
+		clip flowers[i] into [0,P_max]
+		current_fitness = sum_rate(flowers[i])
+		if current_fitness > personal_best[i]: update personal best
+			optional restart/resample when performance low
+
+	update global best from personal_best
+	append histories
+
+return (global_best, global_best_fitness, global_fitness_history,
+				best_solutions, population_history, all_fitness_history, elapsed)
+
+4.4 Lưu ý về Lévy flight
+- Sử dụng Mantegna's algorithm: tạo u ~ N(0, sigma_u^2), v ~ N(0,1), step = u / |v|^{1/lambda}
+- Chọn sigma_u theo công thức chuẩn để đạt được phân phối Lévy có tham số lambda.
+- scale (levy_scale) điều chỉnh độ lớn bước nhảy.
+
+5. Đầu ra, file và trực quan hóa
+- population_history: dùng để in bảng "population summary" ở một số iteration snapshot.
+- global_fitness_history: vẽ kurve best-so-far per-iteration.
+- all_fitness_history: per-iteration personal-best fitness per individual -> dùng để tính avg/worst, hist cuối cùng.
+- Tên file gợi ý:
+	- convergence_P{P_max}.png
+	- population_summary_P{P_max}.csv/.txt
+	- convergence_metrics_P{P_max}.csv
+
+6. Tiêu chí đánh giá và thử nghiệm
+- Metrics:
+	- best_overall (max final best across runs)
+	- mean, std của final best across runs
+	- iters_to_threshold (lần đầu đạt >= threshold * final)
+	- AUC của best-so-far curve (độ hội tụ tổng thể)
+	- runtime trung bình
+
+- Thử nghiệm đề xuất:
+	- Sweep P_max ∈ {1, 10, 100}
+	- num_runs = 10 (ít nhất), max_iter = 100
+	- Fix seed khi cần reproduce
+	- So sánh CSO vs FPA: median/mean/boxplot final best, convergence curves, histogram final individual fitness
+
+7. Trường hợp biên và ổn định
+- Nếu tất cả cá thể đều bị NaN hoặc -inf -> báo cảnh báo, resample toàn bộ quần thể.
+- Nếu final best là NaN hoặc Inf -> loại run đó (đánh dấu lỗi) hoặc trả -inf.
+- Bảo vệ chia cho 0 khi tính SINR (floor interference).
+
+8. Hướng tinh chỉnh và tham số mặc định khuyến nghị
+- CSO: num_cats=30, MR=0.2, SMP=4, SRD=0.2, c=2.0, w=0.5
+- FPA: num_flowers=30, p=0.8, lambda_=1.5, levy_scale=0.1, elitism=0-2
+- Tăng num_runs để có thống kê ổn định khi so sánh thuật toán.
+
+9. Ghi chú triển khai (data shapes & types)
+- P vectors: numpy arrays dtype float, shape (K,)
+- population_history: list of arrays, each array shape (pop_size, K)
+- all_fitness_history: list of arrays, each shape (pop_size,) or shape (pop_size,)
+- histories (best-so-far): list or 1D arrays of length ~= iter+1
+
+10. Mã giả đầy đủ cho cả hai thuật toán (tóm tắt)
+- CSO: xem phần 3.3
+- FPA: xem phần 4.3
+
+11. Kết luận
+- Thiết kế giữ nguyên các ràng buộc vật lý (0..P_max) và ghi lại lịch sử cần thiết để phân tích sau chạy.
+- Cấu trúc trả về nhiều thông tin (population snapshots, per-individual history) là cần thiết cho báo cáo kết quả.
+
+Tệp này có thể mở rộng thêm các phần: hướng dẫn chạy công cụ, scripts để plot batch, hoặc phiên bản docx nếu cần (có thể chuyển từ txt sang docx bằng pandoc hoặc Word).
+
+-- Hết --
