@@ -33,6 +33,16 @@ python CSO_FPA.py
 
 The script runs experiments for P_max values [1,10,100] by default and saves PNG/CSV outputs in the working directory.
 
+### Windows helper
+
+If you are on Windows, a convenience batch script `requirements.bat` is provided to create a virtual environment and install dependencies:
+
+```bat
+requirements.bat
+```
+
+This script will create a `.venv` folder, activate it, upgrade pip and install the packages listed in `requirements.txt`.
+
 ## Outputs
 - `convergence_P{P}.png` : convergence plot comparing CSO and FPA for each P_max
 - `convergence_metrics_P{P}.csv` : per-algorithm convergence speed metrics
