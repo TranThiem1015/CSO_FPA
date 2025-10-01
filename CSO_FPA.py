@@ -624,7 +624,7 @@ def evaluate_algorithms(algorithms, H, K, P_max, num_runs=10, max_iter=100):
         # only printing the last algorithm.
         print_best_solutions(res["runs"], algo, res.get("time_avg", avg_time), P_max=P_max)
 
-    out_basename = f"population_summary_P{P_max}"
+    out_basename = os.path.join("output", f"population_summary_P{P_max}")
     print_population_summary_table(
         results["CSO"]["population_histories"], results["CSO"]["fitness_histories"],
         results["FPA"]["population_histories"], results["FPA"]["fitness_histories"],
@@ -815,12 +815,15 @@ if __name__ == "__main__":
         "CSO": lambda K, H, P_max, max_iter, **kwargs: cso_power_optimization(K, H, P_max, max_iter=max_iter),
         "FPA": lambda K, H, P_max, max_iter, **kwargs: fpa_power_optimization(K, H, P_max, max_iter=max_iter)
     }
+    # Ensure outputs go to the output directory
+    OUTPUT_DIR = "output"
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     # Run experiments for several P_max values and save outputs per value
     for P in [1.0, 10.0, 100.0]:
         print(f"\n--- Running experiments for P_max={P} ---")
         results = evaluate_algorithms(algorithms, H, K=K, P_max=P, num_runs=10, max_iter=100)
-        plot_file = f"convergence_P{P}.png"
+        plot_file = os.path.join(OUTPUT_DIR, f"convergence_P{P}.png")
         plot_mean_convergence(results, max_iter=100, P_max=P, save_path=plot_file)
 
         # Compute convergence metrics for this P and save to CSV
@@ -839,7 +842,7 @@ if __name__ == "__main__":
                 'final_mean': m['final_mean']
             })
         metrics_df = pd.DataFrame(rows)
-        metrics_csv = f"convergence_metrics_P{P}.csv"
+        metrics_csv = os.path.join(OUTPUT_DIR, f"convergence_metrics_P{P}.csv")
         metrics_df.to_csv(metrics_csv, index=False)
         print(f"Convergence metrics saved: {metrics_csv}")
 
@@ -853,3 +856,11 @@ if __name__ == "__main__":
             print(f"Average best: {res['avg']:.6f}")
             print(f"Std dev: {res['std']:.6f}")
             print(f"Average time: {res['time_avg']:.4f}s")
+
+        # Save population summary outputs into output directory
+        out_basename = os.path.join(OUTPUT_DIR, f"population_summary_P{P}")
+        print_population_summary_table(
+            results["CSO"]["population_histories"], results["CSO"]["fitness_histories"],
+            results["FPA"]["population_histories"], results["FPA"]["fitness_histories"],
+            P, K, 100, num_snapshots=5, output_path=out_basename
+        )
