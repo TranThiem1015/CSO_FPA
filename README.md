@@ -57,3 +57,5 @@ Add a license of your choice (e.g., MIT) or remove this section.
 
 ## Contact
 Add maintainer/contact details here if desired.
+
+Made with ❤️ by [Trần Thị Thiêm]
